@@ -1,0 +1,44 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Build outputs / fetched inputs (CI rebuilds or fetches these from pins)
+out/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/bin/
+src-tauri/tiny-model.gguf
+python-backend/venv/
+python-backend/build/
+python-backend/dist/
+python-backend/build_sqlcipher3/
+python-backend/sqlcipher/
+python-backend/selftest_frozen.json
+__pycache__/
+.pytest_cache/
+llama.cpp/
+*.part
+
+# PyInstaller regenerates these from build_backend.sh flags on every build
+python-backend/*.spec

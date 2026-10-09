@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# Reproducible build of the encrypted-storage backend sidecar (macOS + Linux).
+#   0. Fresh Python 3.12 venv, pinned deps
+#   1. SQLCipher amalgamation from source, PINNED tag + commit
+#   2. sqlcipher3 extension, PINNED tag + commit, libcrypto STATICALLY linked
+#      (verified: the built .so must not depend on a shared libcrypto)
+#   3. Unit tests (unfrozen), then PyInstaller one-file binary that also
+#      bundles the test suite
+#   4. Full self-test INSIDE the frozen binary: storage/crypto checks + all
+#      pytest tests. The build fails if anything fails.
+#   5. Copy to src-tauri/bin/backend-<target triple> as the Tauri sidecar
+#
+# Env overrides (used by CI):
+#   PYTHON         python3.12 interpreter to build the venv from
+#   OPENSSL_PREFIX prefix containing include/openssl and lib*/libcrypto.a
+#   TARGET_TRIPLE  Rust target triple for the sidecar file name
+#
+# macOS deps: Homebrew openssl@3, python@3.12.
+# Linux deps (Debian/Ubuntu): build-essential libssl-dev zlib1g-dev
+#   python3.12 + python3.12-venv + python3.12-dev (deadsnakes or setup-python).
+set -euo pipefail
+cd "$(dirname "$0")"
+
+# ---- Pins (change deliberately, never track a branch) ----------------------
+SQLCIPHER_TAG="v4.19.0"
+SQLCIPHER_COMMIT="c4b275a47932888216bade83aff2bbc73df0ff85"
+SQLCIPHER3_TAG="0.6.3"
+SQLCIPHER3_COMMIT="3020374b7736e4381447ca62000836bdcdecd0b2"
+PYTHON_MINOR="3.12"
+# Other Python deps are pinned in requirements.txt
+# ---------------------------------------------------------------------------
+
+OS="$(uname)"
+if [[ "$OS" == "Darwin" ]]; then
+  eval "$(/opt/homebrew/bin/brew shellenv)"
+  OPENSSL_PREFIX="${OPENSSL_PREFIX:-$(brew --prefix openssl@3)}"
+  PYTHON="${PYTHON:-$(brew --prefix python@$PYTHON_MINOR)/bin/python$PYTHON_MINOR}"
+else
+  OPENSSL_PREFIX="${OPENSSL_PREFIX:-/usr}"
+  PYTHON="${PYTHON:-python$PYTHON_MINOR}"
+fi
+TARGET_TRIPLE="${TARGET_TRIPLE:-$(rustc -vV | sed -n 's/^host: //p')}"
+echo "== build_backend: os=$OS python=$PYTHON openssl=$OPENSSL_PREFIX triple=$TARGET_TRIPLE"
+
+# Clone $1 at tag $2 into $3 and verify HEAD == $4. Re-clones on mismatch.
+fetch_pinned() {
+  local url="$1" tag="$2" dir="$3" commit="$4"
+  if [[ -d "$dir" ]] && [[ "$(git -C "$dir" rev-parse HEAD 2>/dev/null)" != "$commit" ]]; then
+    echo "$dir is not at pinned commit, re-cloning"; rm -rf "$dir"
+  fi
+  [[ -d "$dir" ]] || git clone --depth 1 --branch "$tag" "$url" "$dir"
+  local head; head="$(git -C "$dir" rev-parse HEAD)"
+  if [[ "$head" != "$commit" ]]; then
+    echo "FATAL: $url tag $tag resolves to $head, expected $commit (tag moved?)" >&2
+    exit 1
+  fi
+}
+
+# 0. Fresh venv on the pinned Python
+rm -rf venv
+"$PYTHON" -m venv venv
+venv/bin/python -c "import sys; assert sys.version_info[:2] == tuple(map(int, '$PYTHON_MINOR'.split('.'))), sys.version"
+venv/bin/python -m pip install -q --upgrade pip
+venv/bin/pip install -q -r requirements.txt
+
+# 1. SQLCipher amalgamation
+fetch_pinned https://github.com/sqlcipher/sqlcipher.git "$SQLCIPHER_TAG" sqlcipher "$SQLCIPHER_COMMIT"
+( cd sqlcipher
+  ./configure --with-tempstore=yes --fts5 \
+    CFLAGS="-DSQLITE_HAS_CODEC -DSQLITE_EXTRA_INIT=sqlcipher_extra_init -DSQLITE_EXTRA_SHUTDOWN=sqlcipher_extra_shutdown -I$OPENSSL_PREFIX/include" \
+    LDFLAGS="-L$OPENSSL_PREFIX/lib -lcrypto"
+  make sqlite3.c )
+
+# 2. sqlcipher3 wheel, libcrypto static (dir contains ONLY libcrypto.a so -lcrypto can't pick the shared lib)
+LIBCRYPTO_A="$(find "$OPENSSL_PREFIX"/lib* -maxdepth 2 -name libcrypto.a 2>/dev/null | head -1)"
+[[ -n "$LIBCRYPTO_A" ]] || { echo "FATAL: libcrypto.a not found under $OPENSSL_PREFIX" >&2; exit 1; }
+echo "== static libcrypto: $LIBCRYPTO_A"
+mkdir -p build_sqlcipher3/staticssl
+ln -sf "$LIBCRYPTO_A" build_sqlcipher3/staticssl/libcrypto.a
+fetch_pinned https://github.com/coleifer/sqlcipher3.git "$SQLCIPHER3_TAG" build_sqlcipher3/src "$SQLCIPHER3_COMMIT"
+cp sqlcipher/sqlite3.c sqlcipher/sqlite3.h build_sqlcipher3/src/vendor/
+rm -rf build_sqlcipher3/wheels
+( cd build_sqlcipher3/src && rm -rf build dist
+  CFLAGS="-I$OPENSSL_PREFIX/include" LDFLAGS="-L$(pwd)/../staticssl" \
+    ../../venv/bin/pip wheel . --no-build-isolation --no-deps -w ../wheels )
+venv/bin/pip install -q --force-reinstall --no-deps build_sqlcipher3/wheels/sqlcipher3-*.whl
+
+SO="$(venv/bin/python -c 'import sqlcipher3._sqlite3 as m; print(m.__file__)')"
+if [[ "$OS" == "Darwin" ]]; then DEPS="$(otool -L "$SO")"; else DEPS="$(ldd "$SO")"; fi
+echo "$DEPS"
+if grep -q "libcrypto" <<<"$DEPS"; then
+  echo "FATAL: sqlcipher3 links libcrypto dynamically; it must be static" >&2; exit 1
+fi
+
+# 3. Unit tests (unfrozen), then freeze (bundling the tests for step 4)
+venv/bin/python -m pytest -q tests
+PYTEST_IMPORTS="$(venv/bin/python -c 'import pytest; print(" ".join("--hidden-import=" + m for m in pytest.freeze_includes()))')"
+rm -rf build dist
+# shellcheck disable=SC2086
+venv/bin/pyinstaller --noconfirm --onefile --name backend \
+  --collect-all sqlite_vec --collect-submodules keyring --copy-metadata keyring \
+  --collect-submodules secretstorage --collect-submodules jeepney \
+  --hidden-import selftest_storage --hidden-import storage \
+  --hidden-import ingest --hidden-import citations \
+  --add-data "tests:tests" --collect-all reportlab $PYTEST_IMPORTS \
+  main.py
+
+# 4. Prove it works frozen, in a clean environment (no venv, no D-Bus session,
+#    so on Linux this exercises the key-file fallback).
+env -i HOME="$HOME" PATH=/usr/bin:/bin TMPDIR="${TMPDIR:-/tmp}" \
+  ./dist/backend --selftest-full > selftest_frozen.log 2>&1 || { cat selftest_frozen.log; exit 1; }
+tail -3 selftest_frozen.log
+echo "Frozen full self-test: PASS"
+
+# 5. Install as Tauri sidecar
+mkdir -p ../src-tauri/bin
+cp dist/backend "../src-tauri/bin/aidesk-backend-$TARGET_TRIPLE"
+echo "Installed ../src-tauri/bin/aidesk-backend-$TARGET_TRIPLE"

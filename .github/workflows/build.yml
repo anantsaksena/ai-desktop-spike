@@ -1,0 +1,155 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Linux: .deb + .AppImage, free, no signing required.
+  # Built on ubuntu-22.04 rather than ubuntu-latest on purpose: a binary needs
+  # glibc >= the one it was built against. 22.04 (glibc 2.35) output runs on
+  # Ubuntu 22.04+, Debian 12+, Fedora 36+. Building on 24.04 would require
+  # glibc 2.39 and break all of those. ubuntu-latest is covered by the
+  # test-ubuntu-latest job below, which runs the 22.04-built bundles on it.
+  # ---------------------------------------------------------------------------
+  linux:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - id: py
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: System dependencies (same script as the local Docker build)
+        run: SKIP_PYTHON=1 bash ci/linux/install_deps.sh
+      - name: Build model, llama-server, backend (runs tests inside frozen binary), bundles
+        env:
+          PYTHON: ${{ steps.py.outputs.python-path }}
+          OUT: ${{ github.workspace }}/out/linux
+        run: bash ci/linux/build_all.sh
+      - name: Test built bundles (self-tests in both key modes, lifecycle)
+        run: bash ci/linux/test_bundles.sh out/linux
+      # Linux signing is free: a GPG key. Enabled only if the secret exists.
+      - name: GPG-sign artifacts (optional)
+        env:
+          LINUX_GPG_PRIVATE_KEY: ${{ secrets.LINUX_GPG_PRIVATE_KEY }}
+          LINUX_GPG_PASSPHRASE: ${{ secrets.LINUX_GPG_PASSPHRASE }}
+        if: env.LINUX_GPG_PRIVATE_KEY != ''
+        run: |
+          echo "$LINUX_GPG_PRIVATE_KEY" | gpg --batch --import
+          cd out/linux
+          for f in *.deb *.AppImage SHA256SUMS; do
+            gpg --batch --yes --pinentry-mode loopback --passphrase "$LINUX_GPG_PASSPHRASE" \
+                --armor --detach-sign "$f"
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-x86_64
+          path: out/linux/
+          retention-days: 14
+
+  test-ubuntu-latest:
+    needs: linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-x86_64
+          path: out/linux
+      - name: Runtime test tools only (the .deb pulls its own runtime deps)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb dbus dbus-x11 gnome-keyring \
+            procps iproute2 binutils curl libfuse2t64 || \
+          sudo apt-get install -y --no-install-recommends xvfb dbus dbus-x11 gnome-keyring \
+            procps iproute2 binutils curl libfuse2
+          chmod +x out/linux/*.AppImage
+      - run: bash ci/linux/test_bundles.sh out/linux
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, test-ubuntu-latest]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-x86_64
+          path: out/linux
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/linux/*.deb
+            out/linux/*.AppImage
+            out/linux/SHA256SUMS
+            out/linux/*.asc
+
+  # ---------------------------------------------------------------------------
+  # macOS: OFF by default. Enable with repo variable ENABLE_MACOS=true.
+  # Signing/notarization turn on automatically when the APPLE_* secrets exist;
+  # without them Tauri produces an unsigned .dmg. See BUILD.md.
+  # ---------------------------------------------------------------------------
+  macos:
+    if: vars.ENABLE_MACOS == 'true'
+    runs-on: macos-14
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: brew install openssl@3 python@3.12
+      - run: bash scripts/fetch_model.sh && bash scripts/build_llama_server.sh
+      - run: bash python-backend/build_backend.sh
+      - run: npm ci
+      - name: Build .dmg (signed + notarized only if secrets are present)
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CI: "true"
+        run: npx tauri build --bundles dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64
+          path: src-tauri/target/release/bundle/dmg/*.dmg
+
+  # ---------------------------------------------------------------------------
+  # Windows: OFF by default and NOT YET PORTED. The backend build script is
+  # bash + Unix OpenSSL; Windows needs its own SQLCipher/OpenSSL static build.
+  # The signing hook is in place: set WINDOWS_SIGN_COMMAND (see BUILD.md).
+  # ---------------------------------------------------------------------------
+  windows:
+    if: vars.ENABLE_WINDOWS == 'true'
+    runs-on: windows-latest
+    steps:
+      - run: |
+          echo "::error::Windows build not ported yet (see BUILD.md, 'Windows')."
+          exit 1
