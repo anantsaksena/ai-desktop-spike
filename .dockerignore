@@ -1,0 +1,5 @@
+# Allow-list: the image only needs the dependency installer and what it uses.
+*
+!ci/linux/install_deps.sh
+!scripts/lib/fetch_verified.sh
+!rust-toolchain.toml

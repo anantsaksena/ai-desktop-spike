@@ -10,6 +10,9 @@
 #        a) SIGTERM the app  -> both sidecars must be gone, ports freed
 #        b) SIGKILL the app  -> watchdog must clean up both sidecars
 #      Then the same SIGTERM test for the AppImage.
+#   4. CPU gate: with AIDESK_SIMULATE_MISSING_CPU=avx2 the app must start, the
+#      backend must be healthy, llama-server must NOT be started, the log must
+#      say why, and SIGTERM must still clean up.
 # Usage: ci/linux/test_bundles.sh <dir with .deb and .AppImage>
 set -uo pipefail
 DIR="$(cd "$1" && pwd)"
@@ -116,6 +119,34 @@ $SUDO apt-get install -y "$DEB" >/dev/null 2>&1 && pass "apt installed .deb with
 lifecycle deb TERM "/usr/bin/$MAIN_NAME"
 lifecycle deb KILL "/usr/bin/$MAIN_NAME"
 lifecycle appimage TERM "$APPIMAGE"
+
+# ---------------------------------------------------------------- 4. CPU gate
+log "== 4. unsupported-CPU gate (simulated missing AVX2)"
+cpu_gate() {
+  local home="$WORK/home-cpugate"; mkdir -p "$home"; local out="$DIR/app-deb-cpugate.log"
+  HOME="$home" WEBKIT_DISABLE_COMPOSITING_MODE=1 LIBGL_ALWAYS_SOFTWARE=1 AIDESK_SIMULATE_MISSING_CPU=avx2 \
+    "/usr/bin/$MAIN_NAME" > "$out" 2>&1 &
+  local ok=0
+  for _ in $(seq 1 60); do curl -fs http://127.0.0.1:8000/health >/dev/null && { ok=1; break; }; sleep 1; done
+  [[ $ok == 1 ]] || { fail "cpugate: backend not healthy"; pkill -KILL -f 'aidesk-'; pkill -KILL -f "$MAIN_NAME"; return; }
+  sleep 5   # give a (wrongly) started llama-server time to show up
+  local pid; pid="$(app_pid)"
+  if pgrep -f aidesk-llama-server >/dev/null || ss -ltn | grep -q '127.0.0.1:8080\b'; then
+    fail "cpugate: llama-server was started despite the missing CPU feature"
+  elif ! grep -q 'unsupported CPU: missing avx2' "$out"; then
+    fail "cpugate: no 'unsupported CPU' log line"
+  elif ! kill -0 "$pid" 2>/dev/null; then
+    fail "cpugate: app exited instead of reporting"
+  else
+    pass "cpugate: app up, backend healthy, llama-server not started, reason logged"
+    log "  [cpugate] $(grep -o 'unsupported CPU: missing [^;]*' "$out" | head -1)"
+  fi
+  kill -TERM "$pid" 2>/dev/null
+  for _ in $(seq 1 10); do [[ -z "$(sidecar_pids)" ]] && break; sleep 1; done
+  if [[ -z "$(sidecar_pids)" ]]; then pass "cpugate/TERM: clean"; else fail "cpugate/TERM: leftover $(sidecar_pids)"; pkill -KILL -f 'aidesk-'; fi
+  pkill -KILL -f "$MAIN_NAME" 2>/dev/null; sleep 1
+}
+cpu_gate
 
 kill "$XVFB" 2>/dev/null
 log "== RESULT: $([[ $FAIL -eq 0 ]] && echo PASS || echo FAIL)"

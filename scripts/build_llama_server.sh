@@ -27,11 +27,23 @@ fi
 EXTRA=()
 if [[ "$(uname)" == "Linux" ]]; then
   EXTRA+=(-DCMAKE_EXE_LINKER_FLAGS="-static-libstdc++ -static-libgcc")
-  # x86_64 note: with GGML_NATIVE=OFF and no runtime CPU variants, ggml's
-  # defaults still compile in AVX2/FMA/F16C. The binary therefore needs a CPU
-  # from roughly 2013+ (Intel Haswell / AMD Excavator). Runtime variants
-  # (GGML_BACKEND_DL + GGML_CPU_ALL_VARIANTS) would lift that but produce
-  # several .so files instead of one static binary. Revisit if needed.
+fi
+if [[ "$TARGET_TRIPLE" == x86_64-* ]]; then
+  # Explicit instruction set from the single source of truth, which the app
+  # also checks at startup (src-tauri/src/cpu.rs). Everything not listed is
+  # forced OFF. Runtime CPU variants (GGML_BACKEND_DL + GGML_CPU_ALL_VARIANTS)
+  # would lift the AVX2 floor but ship several .so files instead of one static
+  # binary; revisit if older CPUs matter.
+  for opt in GGML_SSE42 GGML_AVX GGML_AVX2 GGML_BMI2 GGML_FMA GGML_F16C GGML_AVX_VNNI \
+             GGML_AVX512 GGML_AVX512_VBMI GGML_AVX512_VNNI GGML_AVX512_BF16 \
+             GGML_AMX_TILE GGML_AMX_INT8 GGML_AMX_BF16; do
+    if grep -qE "^[a-z0-9.]+[[:space:]]+$opt\$" scripts/llama_x86_features.txt; then
+      EXTRA+=("-D$opt=ON")
+    else
+      EXTRA+=("-D$opt=OFF")
+    fi
+  done
+  echo "== x86_64 instruction set: ${EXTRA[*]}"
 fi
 
 BUILD="$SRC/build-$TARGET_TRIPLE"
@@ -43,7 +55,7 @@ cmake -S "$SRC" -B "$BUILD" \
   -DLLAMA_CURL=OFF \
   -DLLAMA_OPENSSL=OFF \
   -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=ON \
-  "${EXTRA[@]}"
+  ${EXTRA[@]+"${EXTRA[@]}"}
 cmake --build "$BUILD" --target llama-server -j"$(getconf _NPROCESSORS_ONLN)"
 
 BIN="$BUILD/bin/llama-server"
@@ -60,6 +72,14 @@ elif [[ "$(uname)" == "Darwin" ]]; then
   if otool -L "$BIN" | grep -qE "/opt/homebrew|/usr/local|libssl|libcrypto|libomp|libllama|libggml"; then
     echo "FATAL: llama-server has unexpected shared deps" >&2; exit 1
   fi
+fi
+if [[ "$TARGET_TRIPLE" == x86_64-* ]]; then
+  # Content check: the startup CPU check (cpu.rs) only tests the features in
+  # llama_x86_features.txt, so the binary must not use anything beyond them.
+  # AVX-512 is the realistic leak (zmm registers).
+  ZMM="$(objdump -d --no-show-raw-insn "$BIN" | grep -c '%zmm' || true)"
+  echo "== AVX-512 (zmm) instructions in llama-server: $ZMM"
+  [[ "$ZMM" == "0" ]] || { echo "FATAL: llama-server contains AVX-512 instructions" >&2; exit 1; }
 fi
 mkdir -p src-tauri/bin
 cp "$BIN" "src-tauri/bin/aidesk-llama-server-$TARGET_TRIPLE"

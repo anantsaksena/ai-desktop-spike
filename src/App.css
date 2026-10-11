@@ -1,3 +1,15 @@
+.llm-alert {
+  margin: 1.5rem auto 0;
+  max-width: 40rem;
+  padding: 0.9rem 1.2rem;
+  border-radius: 10px;
+  border: 1px solid hsl(35 90% 55% / 0.6);
+  background: hsl(35 90% 55% / 0.12);
+  color: inherit;
+  text-align: left;
+  line-height: 1.45;
+}
+
 .counter {
   font-size: 16px;
   padding: 5px 10px;

@@ -10,6 +10,9 @@ on:
 permissions:
   contents: read
 
+# Every action is pinned to a full commit SHA (tags are mutable).
+# ci/audit_downloads.sh fails the build otherwise.
+
 jobs:
   # ---------------------------------------------------------------------------
   # Linux: .deb + .AppImage, free, no signing required.
@@ -18,33 +21,40 @@ jobs:
   # Ubuntu 22.04+, Debian 12+, Fedora 36+. Building on 24.04 would require
   # glibc 2.39 and break all of those. ubuntu-latest is covered by the
   # test-ubuntu-latest job below, which runs the 22.04-built bundles on it.
+  #
+  # Toolchains come from ci/linux/install_deps.sh (same as the local Docker
+  # build): Python from apt-signed deadsnakes, Node from a pinned + verified
+  # tarball, Rust from rust-toolchain.toml. No setup-* actions, so local and CI
+  # can't drift.
   # ---------------------------------------------------------------------------
   linux:
     runs-on: ubuntu-22.04
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
-      - id: py
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7 # v2.9.2
         with:
           workspaces: src-tauri
-      - name: System dependencies (same script as the local Docker build)
-        run: SKIP_PYTHON=1 bash ci/linux/install_deps.sh
-      - name: Build model, llama-server, backend (runs tests inside frozen binary), bundles
+      - name: System dependencies + pinned toolchains (same script as the local Docker build)
+        run: bash ci/linux/install_deps.sh
+      - name: Build model, llama-server, backend (tests inside frozen binary), bundles
         env:
-          PYTHON: ${{ steps.py.outputs.python-path }}
           OUT: ${{ github.workspace }}/out/linux
-        run: bash ci/linux/build_all.sh
-      - name: Test built bundles (self-tests in both key modes, lifecycle)
-        run: bash ci/linux/test_bundles.sh out/linux
+        run: |
+          mkdir -p out/logs
+          bash ci/linux/build_all.sh 2>&1 | tee out/logs/build_all.log
+      - name: Test built bundles (self-tests in both key modes, lifecycle, CPU gate)
+        run: bash ci/linux/test_bundles.sh out/linux 2>&1 | tee out/logs/test_bundles.log
+      # Full step logs need sign-in to read; annotations are public on public
+      # repos. Surface the tail of whatever failed as annotations.
+      - name: Report failure tail as annotations
+        if: failure()
+        run: |
+          for f in out/logs/*.log out/linux/test-report.txt; do
+            [ -f "$f" ] || continue
+            tail -n 60 "$f" | sed 's/%/%25/g' | awk -v f="$f" 'BEGIN{ORS="%0A"} {print} END{}' \
+              | { read -r body || true; echo "::error title=tail of $f::$body"; }
+          done
       # Linux signing is free: a GPG key. Enabled only if the secret exists.
       - name: GPG-sign artifacts (optional)
         env:
@@ -58,11 +68,13 @@ jobs:
             gpg --batch --yes --pinentry-mode loopback --passphrase "$LINUX_GPG_PASSPHRASE" \
                 --armor --detach-sign "$f"
           done
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: linux-x86_64
-          path: out/linux/
+          path: |
+            out/linux/
+            out/logs/
           retention-days: 14
 
   test-ubuntu-latest:
@@ -70,13 +82,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: ci
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: linux-x86_64
-          path: out/linux
+          path: out
       - name: Runtime test tools only (the .deb pulls its own runtime deps)
         run: |
           sudo apt-get update
@@ -85,7 +97,15 @@ jobs:
           sudo apt-get install -y --no-install-recommends xvfb dbus dbus-x11 gnome-keyring \
             procps iproute2 binutils curl libfuse2
           chmod +x out/linux/*.AppImage
-      - run: bash ci/linux/test_bundles.sh out/linux
+      - run: bash ci/linux/test_bundles.sh out/linux 2>&1 | tee test_bundles.log
+      - name: Report failure tail as annotations
+        if: failure()
+        run: |
+          for f in test_bundles.log out/linux/test-report.txt; do
+            [ -f "$f" ] || continue
+            tail -n 60 "$f" | sed 's/%/%25/g' | awk 'BEGIN{ORS="%0A"} {print}' \
+              | { read -r body || true; echo "::error title=tail of $f::$body"; }
+          done
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -94,11 +114,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: linux-x86_64
-          path: out/linux
-      - uses: softprops/action-gh-release@v2
+          path: out
+      - uses: softprops/action-gh-release@e598afbe1493e6b1bafb1f389cabb956eab91231 # v3.0.3
         with:
           files: |
             out/linux/*.deb
@@ -110,18 +130,18 @@ jobs:
   # macOS: OFF by default. Enable with repo variable ENABLE_MACOS=true.
   # Signing/notarization turn on automatically when the APPLE_* secrets exist;
   # without them Tauri produces an unsigned .dmg. See BUILD.md.
+  # Known gap: Homebrew openssl@3/python@3.12 versions float (brew verifies
+  # bottle hashes, but the version isn't pinned).
   # ---------------------------------------------------------------------------
   macos:
     if: vars.ENABLE_MACOS == 'true'
     runs-on: macos-14
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "20"
-          cache: npm
-      - uses: dtolnay/rust-toolchain@stable
+          node-version: "24.21.0"
       - run: brew install openssl@3 python@3.12
       - run: bash scripts/fetch_model.sh && bash scripts/build_llama_server.sh
       - run: bash python-backend/build_backend.sh
@@ -135,8 +155,8 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           CI: "true"
-        run: npx tauri build --bundles dmg
-      - uses: actions/upload-artifact@v4
+        run: npx tauri build --bundles dmg -- --locked
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: macos-arm64
           path: src-tauri/target/release/bundle/dmg/*.dmg

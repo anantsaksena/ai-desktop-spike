@@ -42,3 +42,8 @@ llama.cpp/
 
 # PyInstaller regenerates these from build_backend.sh flags on every build
 python-backend/*.spec
+
+# Verified build-tool store (scripts/seed_appimage_tools.sh) and real-doc test corpus (downloaded, not committed)
+.tools/
+testdata/realdocs/pdfs/
+testdata/realdocs/results/

@@ -1,0 +1,20 @@
+# x86_64 instruction-set extensions compiled into the bundled llama-server.
+# SINGLE SOURCE OF TRUTH, read by:
+#   scripts/build_llama_server.sh  -> -D<CMAKE_FLAG>=ON for each line (all
+#                                     other ggml x86 options forced OFF)
+#   src-tauri/src/cpu.rs           -> include_str! at compile time; the app
+#                                     checks the running CPU before starting
+#                                     llama-server
+# Format: <rust std::arch feature name> <ggml CMake option>
+# This is the set ggml enables by default with GGML_NATIVE=OFF (b11382), made
+# explicit so a change of upstream default (or SOURCE_DATE_EPOCH, which flips
+# ggml to "no extensions") cannot silently change the binary.
+# Minimum CPUs: Intel Haswell (2013), AMD Excavator (2015). Not supported:
+# Sandy/Ivy Bridge, and some low-end Intel Celeron/Pentium/Atom chips (sold
+# into the early 2020s) that lack AVX entirely.
+sse4.2 GGML_SSE42
+avx    GGML_AVX
+avx2   GGML_AVX2
+bmi2   GGML_BMI2
+fma    GGML_FMA
+f16c   GGML_F16C

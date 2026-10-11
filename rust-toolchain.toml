@@ -1,0 +1,5 @@
+# Pinned Rust toolchain for every cargo/rustc invocation under the repo.
+# rustup verifies each component against the SHA-256 in the channel manifest.
+[toolchain]
+channel = "1.99.0"
+profile = "minimal"
