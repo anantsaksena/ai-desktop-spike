@@ -22,7 +22,8 @@ function App() {
   const [inputValue, setInputValue] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [documentId, setDocumentId] = useState<number | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -70,32 +71,69 @@ function App() {
     e.preventDefault();
     setIsDragging(false);
     
-    // In a real implementation, we would send this to the backend /upload endpoint
-    // and wait for ingestion. For now, simulate ingestion.
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
       setHasDocument(true);
       setMessages([
-        { role: "ai", content: `Successfully loaded "${file.name}". How can I help you with this document?` }
+        { role: "ai", content: `Uploading and analyzing "${file.name}"...` }
       ]);
+      
+      const formData = new FormData();
+      formData.append("file", file);
+      
+      try {
+        const res = await fetch("http://127.0.0.1:8000/upload", {
+          method: "POST",
+          body: formData,
+        });
+        const data = await res.json();
+        
+        if (res.ok && data.document_id) {
+          setDocumentId(data.document_id);
+          setMessages([
+            { role: "ai", content: `Successfully loaded "${file.name}". ${data.message || 'How can I help you with this document?'}` }
+          ]);
+        } else {
+          setMessages([{ role: "ai", content: `Failed to load document: ${data.detail || data.message || 'Unknown error'}` }]);
+          setHasDocument(false);
+        }
+      } catch (err) {
+        setMessages([{ role: "ai", content: `Error communicating with backend: ${err}` }]);
+        setHasDocument(false);
+      }
     }
   };
 
-  const handleSend = () => {
-    if (!inputValue.trim()) return;
+  const handleSend = async () => {
+    if (!inputValue.trim() || documentId === null || isProcessing) return;
     
     const userMsg = inputValue;
     setMessages(prev => [...prev, { role: "user", content: userMsg }]);
     setInputValue("");
+    setIsProcessing(true);
     
-    // Simulate AI response with citations for UI purposes
-    setTimeout(() => {
-      setMessages(prev => [...prev, {
-        role: "ai", 
-        content: "Based on the document, this is a placeholder response since the backend Q&A endpoint is not fully wired up yet. The document discusses local-only AI benefits.",
-        citations: [{ page: 1, text: "The document discusses..." }, { page: 3, text: "Another relevant point..." }]
-      }]);
-    }, 1000);
+    try {
+      const res = await fetch("http://127.0.0.1:8000/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ document_id: documentId, question: userMsg }),
+      });
+      const data = await res.json();
+      
+      if (res.ok) {
+        setMessages(prev => [...prev, {
+          role: "ai", 
+          content: data.answer,
+          citations: data.citations
+        }]);
+      } else {
+        setMessages(prev => [...prev, { role: "ai", content: `Error: ${data.detail || 'Failed to get answer'}` }]);
+      }
+    } catch (err) {
+      setMessages(prev => [...prev, { role: "ai", content: `Error communicating with backend: ${err}` }]);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const getStatusDot = (status: string) => {

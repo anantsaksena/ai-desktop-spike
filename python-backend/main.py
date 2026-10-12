@@ -3,16 +3,105 @@ import os
 import sys
 import threading
 import time
+import tempfile
+import requests
 
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 import uvicorn
+
+import ingest
+from storage import Storage
 
 app = FastAPI()
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+class LlamaEmbedder:
+    def __init__(self):
+        self.dim = 288 # TinyLlama embedding dimension
+        
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        try:
+            # llama.cpp /embedding takes {"content": "..."}
+            res = requests.post("http://127.0.0.1:8080/embedding", json={"content": texts[0]})
+            res.raise_for_status()
+            data = res.json()
+            if "embedding" in data:
+                return [data["embedding"]] * len(texts) # simplified for spike: embed one by one or assume len=1
+        except Exception as e:
+            print(f"Embedding failed: {e}")
+        return [[0.0] * self.dim for _ in texts]
+
+db_path = os.path.join(os.path.expanduser("~"), ".ai-desktop-spike.db")
+storage = Storage(db_path, embedding_dim=288)
+embedder = LlamaEmbedder()
 
 @app.get("/health")
 def health():
     return {"status": "backend OK"}
+
+@app.post("/upload")
+async def upload_pdf(file: UploadFile = File(...)):
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    try:
+        report = ingest.ingest_pdf(tmp_path, storage, embedder)
+        return {
+            "status": report.status,
+            "document_id": report.document_id,
+            "message": report.message
+        }
+    finally:
+        os.remove(tmp_path)
+
+class AskRequest(BaseModel):
+    document_id: int
+    question: str
+
+@app.post("/ask")
+def ask_question(req: AskRequest):
+    question_emb = embedder.embed([req.question])[0]
+    hits = storage.vector_search(question_emb, limit=3)
+    
+    context_texts = []
+    citations = []
+    for hit in hits:
+        if hit.document_id == req.document_id:
+            context_texts.append(hit.text)
+            citations.append({"page": hit.page_number, "text": hit.text[:50] + "..."})
+            
+    context_str = "\n\n".join(context_texts)
+    prompt = f"Based on the following document excerpts, answer the question.\n\nContext:\n{context_str}\n\nQuestion: {req.question}\nAnswer:"
+    
+    try:
+        res = requests.post("http://127.0.0.1:8080/completion", json={
+            "prompt": prompt,
+            "n_predict": 100,
+            "temperature": 0.1
+        })
+        res.raise_for_status()
+        answer = res.json().get("content", "")
+    except Exception as e:
+        answer = f"Failed to generate answer: {e}"
+        
+    return {
+        "answer": answer.strip(),
+        "citations": citations
+    }
+
 
 
 def _bundle_dir() -> str:
