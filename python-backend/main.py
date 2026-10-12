@@ -83,13 +83,15 @@ def ask_question(req: AskRequest):
             context_texts.append(hit.text)
             citations.append({"page": hit.page_number, "text": hit.text[:50] + "..."})
             
-    context_str = "\n\n".join(context_texts)
-    prompt = f"Based on the following document excerpts, answer the question.\n\nContext:\n{context_str}\n\nQuestion: {req.question}\nAnswer:"
+    # For the spike, truncate context extremely aggressively 
+    # since tiny-model.gguf only has a 128-token limit!
+    context_str = "\n\n".join(context_texts)[:150]
+    prompt = f"Context:\n{context_str}\nQ: {req.question[:20]}\nA:"
     
     try:
         res = requests.post("http://127.0.0.1:8080/completion", json={
             "prompt": prompt,
-            "n_predict": 100,
+            "n_predict": 10,
             "temperature": 0.1
         })
         res.raise_for_status()
