@@ -3,6 +3,8 @@
 A desktop app that answers questions about your documents using an AI model
 running **entirely on your own computer**. No cloud, no account, no upload.
 
+![App Screenshot](assets/screenshot.png)
+
 Built for professionals who handle confidential material and **cannot send it
 to a third party**: lawyers, clinics, accountants, consultants, HR, and
 anyone bound by client confidentiality or data-protection rules.
