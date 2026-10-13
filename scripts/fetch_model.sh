@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Fetch the bundled placeholder model and verify it.
+# Fetch the CI stand-in model and verify it. NOT shipped: since v0.1.1 users
+# download the real model on first run (python-backend/model_download.py).
+# ci/linux/test_bundles.sh seeds this file as the "downloaded" model so the
+# lifecycle tests can start llama-server without a 1 GB download.
 #
 # History: the original spike downloaded a URL that returned an HTTP 401 error
 # page, saved it as tiny-model.gguf, and pinned the hash of that page. Nobody

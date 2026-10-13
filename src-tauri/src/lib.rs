@@ -1,5 +1,6 @@
 mod cpu;
 
+use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -8,14 +9,31 @@ use tauri::{AppHandle, Manager, RunEvent};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
+/// The chat model is NOT bundled: the backend downloads it once (pinned URL,
+/// SHA-256 + size + GGUF checks) into <app data>/models/. Must match
+/// DEFAULT_MODEL.filename in python-backend/model_download.py.
+const MODEL_FILE: &str = "qwen2.5-1.5b-instruct-q4_k_m.gguf";
+/// llama-server may start after the backend (post-download), so its PID goes
+/// in a file the backend's watchdog reads if the app dies without cleanup.
+const LLAMA_PID_FILE: &str = "llama-server.pid";
+const LLAMA_CTX: &str = "4096";
+
 /// Handles to the sidecars, so we can stop them when the app exits.
 struct Sidecars(Mutex<Vec<(String, CommandChild)>>);
+
+struct Paths {
+    data_dir: PathBuf,
+    model: PathBuf,
+    pid_file: PathBuf,
+}
 
 /// What the UI shows about the local model. Serialized for `llm_status`.
 #[derive(Clone, Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
 enum LlmStatus {
     Starting,
+    /// No verified model on disk yet; the UI offers the one-time download.
+    NeedsModel,
     /// CPU check failed; llama-server was never started.
     UnsupportedCpu { missing: Vec<String>, message: String },
     /// llama-server exited on its own.
@@ -26,6 +44,62 @@ struct Llm(Mutex<LlmStatus>);
 #[tauri::command]
 fn llm_status(llm: tauri::State<'_, Llm>) -> LlmStatus {
     llm.0.lock().unwrap().clone()
+}
+
+/// Start llama-server once the model has been downloaded. Idempotent.
+#[tauri::command]
+fn start_llm(app: AppHandle) -> Result<LlmStatus, String> {
+    let current = app.state::<Llm>().0.lock().unwrap().clone();
+    match current {
+        LlmStatus::UnsupportedCpu { .. } => return Ok(current),
+        LlmStatus::Starting if llama_running(&app) => return Ok(current),
+        _ => {}
+    }
+    if !app.state::<Paths>().model.exists() {
+        return Err("The model has not been downloaded yet.".into());
+    }
+    spawn_llama(&app).map_err(|e| format!("Could not start the AI model: {e}"))?;
+    Ok(app.state::<Llm>().0.lock().unwrap().clone())
+}
+
+fn llama_running(app: &AppHandle) -> bool {
+    let state = app.state::<Sidecars>();
+    let children = state.0.lock().unwrap();
+    children.iter().any(|(n, _c)| {
+        n == "llama-server" && {
+            #[cfg(unix)]
+            {
+                pid_alive(_c.pid())
+            }
+            #[cfg(not(unix))]
+            {
+                true
+            }
+        }
+    })
+}
+
+fn spawn_llama(app: &AppHandle) -> Result<u32, Box<dyn std::error::Error>> {
+    let paths = app.state::<Paths>();
+    let model = paths.model.to_str().ok_or("model path is not UTF-8")?;
+    let (rx, child) = app
+        .shell()
+        .sidecar("aidesk-llama-server")?
+        .args(["--model", model, "--host", "127.0.0.1", "--port", "8080", "--ctx-size", LLAMA_CTX])
+        .spawn()?;
+    drain_output(app.clone(), "llama-server", rx);
+    let pid = child.pid();
+    if let Err(e) = std::fs::write(&paths.pid_file, pid.to_string()) {
+        log::warn!("could not write {}: {e}", paths.pid_file.display());
+    }
+    {
+        let state = app.state::<Sidecars>();
+        let mut s = state.0.lock().unwrap();
+        s.retain(|(n, _)| n != "llama-server"); // drop a dead previous instance
+        s.push(("llama-server".into(), child));
+    }
+    *app.state::<Llm>().0.lock().unwrap() = LlmStatus::Starting;
+    Ok(pid)
 }
 
 /// Forward a sidecar's stdout/stderr to the app log, and note when it exits.
@@ -130,37 +204,49 @@ pub fn run() {
         )
         .manage(Sidecars(Mutex::new(Vec::new())))
         .manage(Llm(Mutex::new(LlmStatus::Starting)))
-        .invoke_handler(tauri::generate_handler![llm_status])
+        .invoke_handler(tauri::generate_handler![llm_status, start_llm])
         .setup(|app| {
             #[cfg(unix)]
             install_signal_handler(app.handle().clone());
 
-            let model_path = app.path().resource_dir()?.join("tiny-model.gguf");
+            let data_dir = app.path().app_data_dir()?;
+            std::fs::create_dir_all(data_dir.join("models"))?;
+            let paths = Paths {
+                model: data_dir.join("models").join(MODEL_FILE),
+                pid_file: data_dir.join(LLAMA_PID_FILE),
+                data_dir,
+            };
+            let _ = std::fs::remove_file(&paths.pid_file); // stale from a crash
+            app.manage(paths);
 
             // llama-server first, so the backend can be told its PID. Only if
             // the CPU has every instruction-set extension it was built with;
             // otherwise it would die of SIGILL. The backend runs either way.
+            // Without a downloaded model it is started later via start_llm.
             let missing = cpu::missing_features();
-            let mut llama = None;
-            if missing.is_empty() {
-                let (llama_rx, child) = app
-                    .shell()
-                    .sidecar("aidesk-llama-server")?
-                    .args(["--model", model_path.to_str().unwrap(), "--host", "127.0.0.1", "--port", "8080"])
-                    .spawn()?;
-                drain_output(app.handle().clone(), "llama-server", llama_rx);
-                llama = Some(child);
-            } else {
+            let mut llama_pid = None;
+            if !missing.is_empty() {
                 let message = cpu::unsupported_message(&missing);
                 log::error!("unsupported CPU: missing {}; not starting llama-server. {message}", missing.join(","));
                 *app.state::<Llm>().0.lock().unwrap() = LlmStatus::UnsupportedCpu { missing, message };
+            } else if app.state::<Paths>().model.exists() {
+                llama_pid = Some(spawn_llama(app.handle())?);
+            } else {
+                log::info!("model not downloaded yet: {}", app.state::<Paths>().model.display());
+                *app.state::<Llm>().0.lock().unwrap() = LlmStatus::NeedsModel;
             }
 
             // The backend watches our PID and exits (taking llama-server with it)
             // if we die without running stop_sidecars, e.g. on a crash or SIGKILL.
-            let mut backend_args = vec!["--parent-pid".to_string(), std::process::id().to_string()];
-            if let Some(l) = &llama {
-                backend_args.extend(["--kill-on-exit".to_string(), l.pid().to_string()]);
+            let paths = app.state::<Paths>();
+            let mut backend_args = vec![
+                "--parent-pid".to_string(), std::process::id().to_string(),
+                "--kill-pid-file".to_string(), paths.pid_file.to_string_lossy().into_owned(),
+                "--data-dir".to_string(), paths.data_dir.to_string_lossy().into_owned(),
+                "--model-path".to_string(), paths.model.to_string_lossy().into_owned(),
+            ];
+            if let Some(pid) = llama_pid {
+                backend_args.extend(["--kill-on-exit".to_string(), pid.to_string()]);
             }
             let (backend_rx, backend) = app
                 .shell()
@@ -169,12 +255,7 @@ pub fn run() {
                 .spawn()?;
             drain_output(app.handle().clone(), "backend", backend_rx);
 
-            let state = app.state::<Sidecars>();
-            let mut s = state.0.lock().unwrap();
-            s.push(("backend".into(), backend));
-            if let Some(l) = llama {
-                s.push(("llama-server".into(), l));
-            }
+            app.state::<Sidecars>().0.lock().unwrap().push(("backend".into(), backend));
             Ok(())
         })
         .build(tauri::generate_context!())

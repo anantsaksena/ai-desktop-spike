@@ -63,5 +63,8 @@ mkdir -p "$OUT"
 cp src-tauri/target/release/bundle/deb/*.deb "$OUT/"
 cp "$APPIMAGE" "$OUT/"
 cp python-backend/selftest_frozen.log "$OUT/build-time-selftest.log"
+# Test fixture only (NOT shipped): test_bundles.sh seeds it as the downloaded
+# model so llama-server starts in the lifecycle tests.
+cp src-tauri/tiny-model.gguf "$OUT/test-model.gguf"
 ( cd "$OUT" && sha256sum *.deb *.AppImage > SHA256SUMS )
 ls -la "$OUT"

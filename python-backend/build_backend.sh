@@ -108,6 +108,7 @@ venv/bin/pyinstaller --noconfirm --onefile --name backend \
   --collect-submodules secretstorage --collect-submodules jeepney \
   --hidden-import selftest_storage --hidden-import storage \
   --hidden-import ingest --hidden-import citations \
+  --hidden-import qa --hidden-import model_download \
   --add-data "tests:tests" --collect-all reportlab $PYTEST_IMPORTS \
   main.py
 

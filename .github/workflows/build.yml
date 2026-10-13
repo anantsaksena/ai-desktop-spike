@@ -10,6 +10,13 @@ on:
 permissions:
   contents: read
 
+# `shell: bash` = bash --noprofile --norc -eo pipefail. Without it, steps run
+# as `bash -e` and `build_all.sh | tee log` reports tee's exit code: a failed
+# build showed green and the test step then ran against missing bundles.
+defaults:
+  run:
+    shell: bash
+
 # Every action is pinned to a full commit SHA (tags are mutable).
 # ci/audit_downloads.sh fails the build otherwise.
 

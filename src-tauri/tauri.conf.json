@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "ai-desktop-spike",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "com.aidesktop.spike",
   "build": {
     "frontendDist": "../dist",
@@ -12,11 +12,14 @@
   "app": {
     "windows": [
       {
-        "title": "AI Desktop Spike",
-        "width": 800,
-        "height": 600,
+        "title": "AI Desktop",
+        "width": 1040,
+        "height": 760,
+        "minWidth": 640,
+        "minHeight": 520,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "dragDropEnabled": false
       }
     ],
     "security": {
@@ -25,9 +28,6 @@
   },
   "bundle": {
     "active": true,
-    "resources": [
-      "tiny-model.gguf"
-    ],
     "externalBin": [
       "bin/aidesk-backend",
       "bin/aidesk-llama-server"
