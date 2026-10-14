@@ -33,7 +33,7 @@ modules:
     sources:
       - type: file
         url: https://github.com/anantsaksena/ai-desktop-spike/releases/download/v0.1.1/ai-desktop-spike_0.1.1_amd64.deb
-        sha256: '@SHA256_DEB@'
+        sha256: 'e3b6697dd6a05f40ea72548c7d97f9224438f49cfc987735f529695238f189b9'
         dest-filename: ai-desktop-spike.deb
         only-arches: [x86_64]
       - type: file

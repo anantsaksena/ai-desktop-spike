@@ -23,4 +23,4 @@ for f in aur/PKGBUILD flatpak/com.aidesktop.spike.yml snap/snapcraft.yaml; do
   sed -i.bak -e "s/@SHA256_DEB@/$DEB_SHA/g" -e "s/@SHA256_LICENSE@/$LIC_SHA/g" "$f" && rm -f "$f.bak"
 done
 echo "deb     $DEB_SHA"; echo "LICENSE $LIC_SHA"
-grep -rn "@SHA256_" . && { echo "placeholders left"; exit 1; } || echo "all placeholders filled"
+grep -rn "@SHA256_" aur flatpak snap && { echo "placeholders left"; exit 1; } || echo "all placeholders filled"

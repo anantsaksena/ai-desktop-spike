@@ -17,8 +17,8 @@ options=('!strip' '!debug')   # aidesk-backend is a PyInstaller bundle; strippin
 source=("ai-desktop-spike_${pkgver}_amd64.deb::${url}/releases/download/v${pkgver}/ai-desktop-spike_${pkgver}_amd64.deb"
         "LICENSE-${pkgver}::https://raw.githubusercontent.com/anantsaksena/ai-desktop-spike/v${pkgver}/LICENSE")
 noextract=("ai-desktop-spike_${pkgver}_amd64.deb")
-sha256sums=('@SHA256_DEB@'
-            '@SHA256_LICENSE@')
+sha256sums=('e3b6697dd6a05f40ea72548c7d97f9224438f49cfc987735f529695238f189b9'
+            '0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0')
 
 package() {
   bsdtar -xOf "ai-desktop-spike_${pkgver}_amd64.deb" data.tar.gz | bsdtar -xf - -C "${pkgdir}"
