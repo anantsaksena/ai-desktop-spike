@@ -1,0 +1,40 @@
+app-id: com.aidesktop.spike
+runtime: org.gnome.Platform
+runtime-version: '47'
+sdk: org.gnome.Sdk
+command: ai-desktop-spike
+finish-args:
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  # Network is used for ONE thing: the one-time, user-initiated download of the
+  # AI model (pinned URL, SHA-256 verified). The UI talks to its own backend on
+  # 127.0.0.1. Documents and questions are never sent anywhere.
+  - --share=network
+  # Keep the database key in the desktop keychain (falls back to a 0600 key file).
+  - --talk-name=org.freedesktop.secrets
+  # No --filesystem: PDFs are picked through the file-chooser portal or dropped
+  # onto the window, and their bytes are handed to the local backend.
+modules:
+  - name: ai-desktop-spike
+    buildsystem: simple
+    build-commands:
+      - ar x ai-desktop-spike.deb
+      - tar -xf data.tar.gz
+      - install -Dm755 usr/bin/ai-desktop-spike /app/bin/ai-desktop-spike
+      - install -Dm755 usr/bin/aidesk-backend /app/bin/aidesk-backend
+      - install -Dm755 usr/bin/aidesk-llama-server /app/bin/aidesk-llama-server
+      - install -Dm644 usr/share/icons/hicolor/128x128/apps/*.png /app/share/icons/hicolor/128x128/apps/com.aidesktop.spike.png
+      - install -Dm644 usr/share/icons/hicolor/32x32/apps/*.png /app/share/icons/hicolor/32x32/apps/com.aidesktop.spike.png
+      - install -Dm644 usr/share/applications/ai-desktop-spike.desktop /app/share/applications/com.aidesktop.spike.desktop
+      - desktop-file-edit --set-icon=com.aidesktop.spike --set-key=Exec --set-value=ai-desktop-spike /app/share/applications/com.aidesktop.spike.desktop
+      - install -Dm644 com.aidesktop.spike.metainfo.xml /app/share/metainfo/com.aidesktop.spike.metainfo.xml
+    sources:
+      - type: file
+        url: https://github.com/anantsaksena/ai-desktop-spike/releases/download/v0.1.1/ai-desktop-spike_0.1.1_amd64.deb
+        sha256: '@SHA256_DEB@'
+        dest-filename: ai-desktop-spike.deb
+        only-arches: [x86_64]
+      - type: file
+        path: com.aidesktop.spike.metainfo.xml

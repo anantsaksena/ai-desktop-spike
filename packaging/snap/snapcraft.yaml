@@ -1,0 +1,43 @@
+name: ai-desktop-spike
+version: '0.1.1'
+summary: Ask questions about confidential PDFs, entirely on your computer
+description: |
+  Drop in a PDF, ask a question, and get an answer with the page numbers it
+  came from. The AI model runs on your own CPU; extracted text is stored in an
+  encrypted SQLCipher database. No account, no cloud, no telemetry.
+  Works offline after a one-time, verified model download (about 1 GB).
+license: AGPL-3.0-only
+website: https://github.com/anantsaksena/ai-desktop-spike
+grade: stable
+confinement: strict
+base: core22
+architectures: [amd64]
+
+apps:
+  ai-desktop-spike:
+    command: usr/bin/ai-desktop-spike
+    desktop: usr/share/applications/ai-desktop-spike.desktop
+    extensions: [gnome]          # provides GTK3 + WebKitGTK 4.1 at runtime
+    plugs:
+      - desktop
+      - wayland
+      - x11
+      - opengl
+      # Only for the one-time, user-initiated model download. The UI talks to
+      # its own backend on 127.0.0.1; documents never leave the machine.
+      - network
+      - network-bind              # backend + llama-server listen on 127.0.0.1
+      - password-manager-service  # database key in the desktop keychain
+
+parts:
+  app:
+    plugin: dump
+    source: https://github.com/anantsaksena/ai-desktop-spike/releases/download/v0.1.1/ai-desktop-spike_0.1.1_amd64.deb
+    source-type: deb
+    source-checksum: sha256/@SHA256_DEB@
+    prime:
+      - usr/bin/ai-desktop-spike
+      - usr/bin/aidesk-backend
+      - usr/bin/aidesk-llama-server
+      - usr/share/applications
+      - usr/share/icons

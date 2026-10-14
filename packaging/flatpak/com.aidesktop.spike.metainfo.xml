@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.aidesktop.spike</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>AGPL-3.0-only</project_license>
+  <name>AI Desktop</name>
+  <summary>Ask questions about confidential PDFs, entirely on your computer</summary>
+  <developer id="io.github.anantsaksena">
+    <name>Anant Saksena</name>
+  </developer>
+  <description>
+    <p>
+      Drop in a PDF, ask a question in plain English, and get an answer with the
+      page numbers it came from. The AI model runs on your own CPU, and the
+      extracted text is stored in an encrypted (SQLCipher) database.
+    </p>
+    <ul>
+      <li>No account, no cloud, no telemetry</li>
+      <li>Answers cite their source pages; click to see the passage</li>
+      <li>Works offline after a one-time, verified model download (about 1 GB)</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">com.aidesktop.spike.desktop</launchable>
+  <url type="homepage">https://github.com/anantsaksena/ai-desktop-spike</url>
+  <url type="bugtracker">https://github.com/anantsaksena/ai-desktop-spike/issues</url>
+  <screenshots>
+    <screenshot type="default">
+      <caption>An answer with clickable page sources</caption>
+      <image>https://raw.githubusercontent.com/anantsaksena/ai-desktop-spike/v0.1.1/landing-page/media/demo-poster.jpg</image>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1"/>
+  <requires>
+    <memory>4096</memory>
+  </requires>
+  <releases>
+    <release version="0.1.1" date="2026-10-14">
+      <description>
+        <p>First release with the Q&amp;A screen: upload a PDF, ask questions,
+        get answers with page sources. Uses Qwen2.5-1.5B-Instruct, downloaded
+        once on first run.</p>
+      </description>
+    </release>
+    <release version="0.1.0" date="2026-10-12"/>
+  </releases>
+</component>

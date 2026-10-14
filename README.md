@@ -3,7 +3,9 @@
 A desktop app that answers questions about your documents using an AI model
 running **entirely on your own computer**. No cloud, no account, no upload.
 
-![App Screenshot](assets/screenshot.png)
+![AI Desktop answering a question about a sample lease, with page sources](landing-page/media/demo-poster.jpg)
+
+▶ [30-second demo video](landing-page/media/demo.mp4) (real recording of v0.1.1)
 
 Built for professionals who handle confidential material and **cannot send it
 to a third party**: lawyers, clinics, accountants, consultants, HR, and

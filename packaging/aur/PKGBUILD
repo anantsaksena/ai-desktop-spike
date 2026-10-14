@@ -1,0 +1,26 @@
+# Maintainer: Anant Saksena <anantsaksena89@gmail.com>
+# Repackages the official .deb from the GitHub release.
+# Checksums are filled from the release's SHA256SUMS by packaging/update-checksums.sh.
+pkgname=ai-desktop-spike-bin
+pkgver=0.1.1
+pkgrel=1
+pkgdesc="Private document Q&A that runs entirely on your computer (Tauri + llama.cpp + SQLCipher)"
+arch=('x86_64')
+url="https://github.com/anantsaksena/ai-desktop-spike"
+license=('AGPL-3.0-only')
+depends=('webkit2gtk-4.1' 'gtk3' 'glibc' 'gcc-libs' 'hicolor-icon-theme')
+optdepends=('gnome-keyring: store the database key in the OS keychain'
+            'kwallet: store the database key in the OS keychain (KDE)')
+provides=('ai-desktop-spike')
+conflicts=('ai-desktop-spike')
+options=('!strip' '!debug')   # aidesk-backend is a PyInstaller bundle; stripping breaks it
+source=("ai-desktop-spike_${pkgver}_amd64.deb::${url}/releases/download/v${pkgver}/ai-desktop-spike_${pkgver}_amd64.deb"
+        "LICENSE-${pkgver}::https://raw.githubusercontent.com/anantsaksena/ai-desktop-spike/v${pkgver}/LICENSE")
+noextract=("ai-desktop-spike_${pkgver}_amd64.deb")
+sha256sums=('@SHA256_DEB@'
+            '@SHA256_LICENSE@')
+
+package() {
+  bsdtar -xOf "ai-desktop-spike_${pkgver}_amd64.deb" data.tar.gz | bsdtar -xf - -C "${pkgdir}"
+  install -Dm644 "LICENSE-${pkgver}" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

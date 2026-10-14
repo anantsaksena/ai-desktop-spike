@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Desktop: private Q&amp;A for confidential PDFs, on your own computer</title>
+    <meta name="description" content="Ask questions about confidential PDFs and get answers with page sources. The AI runs on your computer and the text is stored encrypted. Free and open source for Linux (v0.1.1).">
+    <meta property="og:title" content="AI Desktop: private document Q&amp;A, on your own computer">
+    <meta property="og:description" content="Drop in a PDF, ask a question, get an answer with page sources. Nothing is uploaded.">
+    <meta property="og:image" content="media/demo-poster.jpg">
+    <link rel="stylesheet" href="styles.css">
+    <!-- No web fonts, analytics or third-party requests: this page loads only its own files. -->
+</head>
+<body>
+    <div class="background-blobs" aria-hidden="true">
+        <div class="blob primary"></div>
+        <div class="blob secondary"></div>
+    </div>
+
+    <nav class="navbar glass" aria-label="Main">
+        <div class="logo">◆ AI Desktop</div>
+        <div class="nav-links">
+            <a href="#demo">Demo</a>
+            <a href="#features">How it works</a>
+            <a href="#install">Install</a>
+            <a href="https://github.com/anantsaksena/ai-desktop-spike" class="btn-outline" id="nav-github">GitHub</a>
+        </div>
+    </nav>
+
+    <main>
+        <header class="hero">
+            <div class="hero-content">
+                <a class="badge" href="https://github.com/anantsaksena/ai-desktop-spike/releases/tag/v0.1.1" id="hero-badge">v0.1.1 · early preview · Linux</a>
+                <h1>Ask your documents.<br><span class="gradient-text">Keep them yours.</span></h1>
+                <p>Drop in a confidential PDF, ask a question in plain English, and get an answer with the page it came from. The AI runs on your computer. Nothing is uploaded, and there's no account.</p>
+                <div class="cta-group">
+                    <a href="#install" class="btn-primary" id="hero-download">Download for Linux</a>
+                    <a href="#demo" class="btn-secondary" id="hero-demo">Watch the 30-second demo</a>
+                </div>
+            </div>
+            <figure class="hero-visual glass">
+                <img src="media/demo-poster.jpg" width="1280" height="798"
+                     alt="AI Desktop answering 'How much notice is needed to terminate the lease?' with '60 days written notice' and page sources.">
+            </figure>
+        </header>
+
+        <section id="demo" class="demo-section">
+            <h2>See it in action</h2>
+            <div class="video-container glass">
+                <video id="demo-video" controls muted playsinline preload="metadata" poster="media/demo-poster.jpg" width="1280" height="798">
+                    <source src="media/demo.mp4" type="video/mp4">
+                    <a href="media/demo.mp4">Download the demo video (MP4, 0.5 MB)</a>
+                </video>
+            </div>
+            <p class="caption">Unedited screen recording of v0.1.1 with a fictional sample lease (sped up). The model is Qwen2.5-1.5B-Instruct running locally.</p>
+        </section>
+
+        <section id="features" class="features">
+            <h2>How it <span class="gradient-text">protects your documents</span></h2>
+            <div class="grid">
+                <article class="feature-card glass">
+                    <div class="icon" aria-hidden="true">💻</div>
+                    <h3>The AI runs on your machine</h3>
+                    <p>A bundled llama.cpp server runs the model on your CPU. Your documents and questions never leave the computer. No cloud API, no telemetry, no account.</p>
+                </article>
+                <article class="feature-card glass">
+                    <div class="icon" aria-hidden="true">🔒</div>
+                    <h3>Encrypted at rest</h3>
+                    <p>Extracted text and the search index live in a SQLCipher 4 database (AES-256, per-page HMAC). The key is kept in your OS keychain (or a private 0600 key file if there's no keychain), never inside the database.</p>
+                </article>
+                <article class="feature-card glass">
+                    <div class="icon" aria-hidden="true">📑</div>
+                    <h3>Answers show their sources</h3>
+                    <p>Every answer lists the pages it used. Click one to read the exact passage, so you can check the answer instead of trusting it.</p>
+                </article>
+            </div>
+            <div class="honest glass">
+                <h3>What it does <em>not</em> do (yet)</h3>
+                <ul>
+                    <li><strong>One download, once:</strong> the first launch offers to download the AI model (about 1&nbsp;GB, SHA-256 verified). After that it works with Wi-Fi off.</li>
+                    <li><strong>Keyword search today:</strong> passages are found with full-text search (BM25). Semantic search is planned.</li>
+                    <li><strong>Text PDFs only:</strong> scanned documents need OCR, which isn't built in yet.</li>
+                    <li><strong>Small model:</strong> a 1.5B model is fast on a laptop but can be wrong. That's why the sources are always shown.</li>
+                </ul>
+            </div>
+        </section>
+
+        <section id="install" class="install-section">
+            <h2>Install v0.1.1</h2>
+            <div class="install-grid">
+                <div class="install-card glass">
+                    <h3>Ubuntu / Debian / Mint</h3>
+                    <pre><code>wget https://github.com/anantsaksena/ai-desktop-spike/releases/download/v0.1.1/ai-desktop-spike_0.1.1_amd64.deb
+sudo apt install ./ai-desktop-spike_0.1.1_amd64.deb</code></pre>
+                </div>
+                <div class="install-card glass">
+                    <h3>Any distro (AppImage)</h3>
+                    <pre><code>wget https://github.com/anantsaksena/ai-desktop-spike/releases/download/v0.1.1/ai-desktop-spike_0.1.1_amd64.AppImage
+chmod +x ai-desktop-spike_0.1.1_amd64.AppImage
+./ai-desktop-spike_0.1.1_amd64.AppImage</code></pre>
+                </div>
+            </div>
+            <p class="caption">x86-64 with AVX2 (most PCs from 2015 on), 4&nbsp;GB RAM. Verify downloads against
+                <a href="https://github.com/anantsaksena/ai-desktop-spike/releases/download/v0.1.1/SHA256SUMS" id="install-sums">SHA256SUMS</a>.
+                Flathub, AUR and Snap packages are in review. macOS and Windows are planned.</p>
+            <div class="cta-group center">
+                <a href="https://github.com/anantsaksena/ai-desktop-spike/releases/tag/v0.1.1" class="btn-primary" id="install-release">All v0.1.1 downloads</a>
+                <a href="https://github.com/anantsaksena/ai-desktop-spike/issues" class="btn-secondary" id="install-issues">Report a bug</a>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>Free and open source (AGPL-3.0) · Built with Tauri, llama.cpp and SQLCipher ·
+            <a href="https://github.com/anantsaksena/ai-desktop-spike">Source code</a></p>
+    </footer>
+</body>
+</html>
