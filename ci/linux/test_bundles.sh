@@ -45,6 +45,10 @@ DEB_BIN="$WORK/deb/usr/bin"; APP_BIN="$WORK/squashfs-root/usr/bin"
 MAIN_NAME="$(ls "$DEB_BIN" | grep -v '^aidesk-' | head -1)"
 [[ -n "$MAIN_NAME" && -x "$APP_BIN/aidesk-backend" ]] || { echo "FATAL: could not find binaries in the bundles"; exit 2; }
 log "deb: $(basename "$DEB")  appimage: $(basename "$APPIMAGE")  main binary: $MAIN_NAME"
+# Kill only processes whose EXECUTABLE is .../$MAIN_NAME (deb or extracted
+# AppImage). A bare `pkill -f "$MAIN_NAME"` also matches every command line that
+# merely contains the name, e.g. anything under the CI checkout directory.
+kill_main() { pkill -KILL -f "^[^ ]*/${MAIN_NAME}( |\$)" 2>/dev/null; }
 
 # ---------------------------------------------------------------- 1. glibc
 log "== 1. glibc requirements (must be <= $GLIBC_MAX)"
@@ -167,7 +171,7 @@ lifecycle() {  # $1=label $2=signal $3...=command
     "$@" > "$DIR/app-$label-$sig.log" 2>&1 &
   if ! wait_healthy; then
     fail "$label: sidecars not healthy within 90s"; log "  [$label/$sig] not healthy; pids: $(sidecar_pids)"
-    pkill -KILL -f 'aidesk-' ; pkill -KILL -f "$MAIN_NAME"; return
+    pkill -KILL -f 'aidesk-' ; kill_main; return
   fi
   [[ -s "$home/.local/share/$APP_ID/llama-server.pid" ]] \
     && pass "$label/$sig: llama-server PID file written for the watchdog" \
@@ -184,7 +188,7 @@ lifecycle() {  # $1=label $2=signal $3...=command
     fail "$label/$sig: leftover sidecars [$left] ports_open=$(ports_open)"; log "  [$label/$sig] LEFTOVER: $left"
     pkill -KILL -f 'aidesk-'
   fi
-  pkill -KILL -f "$MAIN_NAME" 2>/dev/null; sleep 1
+  kill_main 2>/dev/null; sleep 1
 }
 
 $SUDO apt-get install -y "$DEB" >/dev/null 2>&1 && pass "apt installed .deb with its declared dependencies" \
@@ -201,7 +205,7 @@ cpu_gate() {
     "/usr/bin/$MAIN_NAME" > "$out" 2>&1 &
   local ok=0
   for _ in $(seq 1 60); do curl -fs http://127.0.0.1:8000/health >/dev/null && { ok=1; break; }; sleep 1; done
-  [[ $ok == 1 ]] || { fail "cpugate: backend not healthy"; pkill -KILL -f 'aidesk-'; pkill -KILL -f "$MAIN_NAME"; return; }
+  [[ $ok == 1 ]] || { fail "cpugate: backend not healthy"; pkill -KILL -f 'aidesk-'; kill_main; return; }
   sleep 5   # give a (wrongly) started llama-server time to show up
   local pid; pid="$(app_pid)"
   if pgrep -f aidesk-llama-server >/dev/null || ss -ltn | grep -q '127.0.0.1:8080\b'; then
@@ -217,7 +221,7 @@ cpu_gate() {
   kill -TERM "$pid" 2>/dev/null
   for _ in $(seq 1 10); do [[ -z "$(sidecar_pids)" ]] && break; sleep 1; done
   if [[ -z "$(sidecar_pids)" ]]; then pass "cpugate/TERM: clean"; else fail "cpugate/TERM: leftover $(sidecar_pids)"; pkill -KILL -f 'aidesk-'; fi
-  pkill -KILL -f "$MAIN_NAME" 2>/dev/null; sleep 1
+  kill_main 2>/dev/null; sleep 1
 }
 cpu_gate
 

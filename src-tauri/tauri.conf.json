@@ -1,6 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "ai-desktop-spike",
+  "mainBinaryName": "ai-desktop-spike",
   "version": "0.1.1",
   "identifier": "com.aidesktop.spike",
   "build": {
