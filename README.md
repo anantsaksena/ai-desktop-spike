@@ -5,7 +5,7 @@ running **entirely on your own computer**. No cloud, no account, no upload.
 
 ![AI Desktop answering a question about a sample lease, with page sources](landing-page/media/demo-poster.jpg)
 
-▶ [30-second demo video](landing-page/media/demo.mp4) (real recording of v0.1.1)
+▶ [30-second demo](https://anantsaksena.github.io/ai-desktop-spike/#demo) · [Website](https://anantsaksena.github.io/ai-desktop-spike/)
 
 Built for professionals who handle confidential material and **cannot send it
 to a third party**: lawyers, clinics, accountants, consultants, HR, and
