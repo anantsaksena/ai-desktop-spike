@@ -144,9 +144,13 @@ api_smoke() {  # $1=label $2=HOME. Real HTTP path the UI uses: upload -> ask -> 
         "http://127.0.0.1:8000/upload?filename=smoke.pdf")" || { fail "$label/api: upload failed"; return; }
   id="$(json_get 'd["document_id"] if d.get("chunk_count") else ""' <<<"$r")"
   [[ -n "$id" ]] || { fail "$label/api: upload indexed nothing: $r"; return; }
-  r="$(curl -fsS --max-time 240 -X POST -H 'Content-Type: application/json' \
+  # No -f: on an HTTP error we want the backend's message in the report.
+  local code
+  code="$(curl -sS --max-time 240 -o "$WORK/ask.json" -w '%{http_code}' -X POST \
+        -H 'Content-Type: application/json' \
         -d "{\"document_id\": $id, \"question\": \"Where must notices be sent?\"}" \
-        http://127.0.0.1:8000/ask)" || { fail "$label/api: /ask failed"; return; }
+        http://127.0.0.1:8000/ask)"; r="$(cat "$WORK/ask.json" 2>/dev/null)"
+  [[ "$code" == 200 ]] || { fail "$label/api: /ask HTTP $code: ${r:0:400}"; log "  [$label/api] /ask HTTP $code: ${r:0:400}"; return; }
   page="$(json_get 'd["citations"][0]["page"]' <<<"$r")"
   if [[ "$page" == 2 ]]; then pass "$label/api: upload -> ask -> answer cites page 2"
   else fail "$label/api: expected first citation on page 2: ${r:0:400}"; fi

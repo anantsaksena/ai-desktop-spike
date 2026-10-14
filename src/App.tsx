@@ -215,6 +215,17 @@ function App() {
     if (file) uploadFile(file);
   };
 
+  // Bundled fictional lease, so people can try the app before using real files.
+  const trySample = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const blob = await (await fetch("/sample-lease.pdf")).blob();
+      await uploadFile(new File([blob], "sample-lease (fictional).pdf", { type: "application/pdf" }));
+    } catch (err) {
+      setMessages([{ role: "ai", content: `Could not load the sample: ${err}`, error: true }]);
+    }
+  };
+
   const handleSend = async () => {
     const q = inputValue.trim();
     if (!q || !doc || isProcessing || phase !== "ready") return;
@@ -336,6 +347,9 @@ function App() {
                 </svg>
                 <p>Drop a PDF here, or <span className="link">choose a file</span></p>
                 <small>Text and search index are stored in an encrypted local database.</small>
+                <button id="sample-btn" className="btn-ghost" onClick={trySample}>
+                  No PDF handy? Try a sample contract
+                </button>
               </>
             )}
             {messages[0]?.error && <p className="onboard-error">{messages[0].content}</p>}

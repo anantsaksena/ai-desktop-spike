@@ -14,10 +14,13 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/lib/fetch_verified.sh
 
-# llama.cpp's own CI test model: TinyLlama "stories15M", Q4_0, llama architecture.
-REPO_COMMIT="499bc8821c6b12b4e53c5bffcb21ec206f212d81"
+# SmolLM2-135M-Instruct, Q4_K_M (105 MB): a real chat model with a chat
+# template and an 8K training context. The previous stand-in, stories15M, was
+# trained on 128 tokens; llama-server caps each slot at the training context,
+# so the real Q&A prompt overflowed it and /ask returned 502 in CI.
+REPO_COMMIT="09816acd5d99df7be770d85ea30822623dab342c"
 fetch_verified \
-  "https://huggingface.co/ggml-org/models/resolve/$REPO_COMMIT/tinyllamas/stories15M-q4_0.gguf" \
+  "https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/$REPO_COMMIT/SmolLM2-135M-Instruct-Q4_K_M.gguf" \
   src-tauri/tiny-model.gguf \
-  66967fbece6dbe97886593fdbb73589584927e29119ec31f08090732d1861739 \
-  19077344 gguf
+  2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d \
+  105454432 gguf

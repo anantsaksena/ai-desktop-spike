@@ -60,7 +60,7 @@ silently drop all of those. The `test-ubuntu-latest` CI job runs the
 | sqlcipher3 | 0.6.3 @ 3020374b | `python-backend/build_backend.sh` |
 | llama.cpp | b11382 @ 11fe0215 | `scripts/build_llama_server.sh` |
 | Python deps | exact versions | `python-backend/requirements.txt` |
-| Test model | ggml-org/models @ 499bc882, `tinyllamas/stories15M-q4_0.gguf`, SHA-256 66967fbe… | `scripts/fetch_model.sh` |
+| CI test model (not shipped) | bartowski/SmolLM2-135M-Instruct-GGUF @ 09816acd, `SmolLM2-135M-Instruct-Q4_K_M.gguf`, SHA-256 2e8040ce… | `scripts/fetch_model.sh` |
 | Python | 3.12 | `build_backend.sh`, workflow |
 
 A tag that moves to a different commit fails the build. `fetch_model.sh` also
