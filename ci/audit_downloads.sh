@@ -13,6 +13,11 @@
 #   apt-get                         signed repository metadata
 #   uses: owner/action@<40-hex SHA> immutable commit
 #   FROM image@sha256:...           immutable image digest
+#
+# Exempt (never run by a build):
+#   packaging/update-checksums.sh   maintainer tool run AFTER a release; it
+#                                   computes the pins, checking the .deb
+#                                   against the release's SHA256SUMS
 set -euo pipefail
 cd "$(dirname "$0")/.."
 fail=0
@@ -30,7 +35,8 @@ code() { sed -E 's/(^|[[:space:]])#.*$//' "$1"; }
 
 for f in $FILES; do
   [[ -f "$f" ]] || continue
-  [[ "$f" == "scripts/lib/fetch_verified.sh" || "$f" == "ci/audit_downloads.sh" ]] && continue
+  [[ "$f" == "scripts/lib/fetch_verified.sh" || "$f" == "ci/audit_downloads.sh" \
+     || "$f" == "packaging/update-checksums.sh" ]] && continue
   c="$(code "$f")"
   # curl/wget to anything but the local sidecars
   if grep -nE '\b(curl|wget)\b[^|]*https?://' <<<"$c" | grep -vE 'https?://(127\.0\.0\.1|localhost)' ; then
